@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -14,13 +15,13 @@ namespace bmpKonverter
 	/// <summary>
 	///    Interaktionslogik für MainWindow.xaml
 	/// </summary>
-	public partial class MainWindow : Window
+	public partial class MainWindow
 	{
-		private CancellationTokenSource _cts = null;
-		private FileSystemWatcher _Watcher;
-		private int filecount = 0;
-		private int index = 0;
-		private DateTime start;
+		private CancellationTokenSource _cts;
+		private FileSystemWatcher _watcher;
+		private int _filecount;
+		private int _index;
+		private DateTime _start;
 
 		public MainWindow()
 		{
@@ -29,8 +30,8 @@ namespace bmpKonverter
 
 		private void SearchInputBtn_Click(object sender, RoutedEventArgs e)
 		{
-			var dialog = new VistaFolderBrowserDialog();
-			dialog.Description = "Eingabepfad auswählen";
+			var dialog = new VistaFolderBrowserDialog {Description = "Eingabepfad auswählen"};
+
 			if (Directory.Exists(InputTxt.Text))
 				dialog.SelectedPath = InputTxt.Text;
 			if (dialog.ShowDialog(this) ?? false)
@@ -39,8 +40,8 @@ namespace bmpKonverter
 
 		private void SearchOutputBtn_Click(object sender, RoutedEventArgs e)
 		{
-			var dialog = new VistaFolderBrowserDialog();
-			dialog.Description = "Ausgabepfad auswählen";
+			var dialog = new VistaFolderBrowserDialog {Description = "Ausgabepfad auswählen"};
+
 			if (Directory.Exists(OutputTxt.Text))
 				dialog.SelectedPath = OutputTxt.Text;
 			if (dialog.ShowDialog(this) ?? false)
@@ -51,8 +52,8 @@ namespace bmpKonverter
 		{
 			if (Directory.Exists(InputTxt.Text))
 			{
-				filecount = Directory.EnumerateFiles(InputTxt.Text, "*.bmp").Count();
-				InputinfoLbl.Content = string.Format("{0} Dateien gefunden.", filecount);
+				_filecount = Directory.EnumerateFiles(InputTxt.Text, "*.bmp").Count();
+				InputinfoLbl.Content = string.Format("{0} Dateien gefunden.", _filecount);
 				StartBtn.IsEnabled = true;
 			}
 			else
@@ -63,14 +64,14 @@ namespace bmpKonverter
 		{
 			if (_cts == null) // Berechnung starten
 			{
-				index = 0;
+				_index = 0;
 				StatusPb.Value = 0;
-				StatusPb.Maximum = filecount;
+				StatusPb.Maximum = _filecount;
 				StartBtn.Content = "Abbrechen";
 				WatchBtn.IsEnabled = false;
 				EnableGUI(false);
 				_cts = new CancellationTokenSource();
-				start = DateTime.Now;
+				_start = DateTime.Now;
 
 				string inputdir = InputTxt.Text;
 				if (!Directory.Exists(inputdir))
@@ -91,7 +92,7 @@ namespace bmpKonverter
 				var task = Task.Factory.StartNew(() =>
 				{
 					var files = Directory.EnumerateFiles(inputdir, "*.bmp");
-					Parallel.ForEach(files, options, (filepath) =>
+					Parallel.ForEach(files, options, filepath =>
 					{
 						string filename = Path.GetFileNameWithoutExtension(filepath);
 						string dest = Path.Combine(outputdir, filename + ".png");
@@ -99,7 +100,7 @@ namespace bmpKonverter
 							Convert(filepath, dest);
 					});
 				}, _cts.Token);
-				task.ContinueWith((t) => { this.Dispatcher.BeginInvoke(new Action<Task>(ResetGUI), t); });
+				task.ContinueWith(t => { Dispatcher.BeginInvoke(new Action<Task>(ResetGUI), t); });
 			}
 			else
 				_cts.Cancel();
@@ -121,12 +122,12 @@ namespace bmpKonverter
 			WatchBtn.Content = "Überwachen";
 			_cts = null;
 			StatusPb.Value = 0;
-			index = 0;
-			var seconds = (DateTime.Now - start).TotalSeconds;
+			_index = 0;
+			var seconds = (DateTime.Now - _start).TotalSeconds;
 			if (t.Status == TaskStatus.RanToCompletion)
 			{
-				StatusLbl.Content = string.Format("{0} Dateien wurden erfolgreich konvertiert. ({1:0.00 Bilder/s})", filecount,
-					filecount / seconds);
+				StatusLbl.Content = string.Format("{0} Dateien wurden erfolgreich konvertiert. ({1:0.00 Bilder/s})", _filecount,
+					_filecount / seconds);
 			}
 			else
 				StatusLbl.Content = string.Format("Es ist ein Fehler aufgetreten.");
@@ -134,8 +135,8 @@ namespace bmpKonverter
 
 		private void UpdateGUI()
 		{
-			StatusLbl.Content = string.Format("{0} von {1} Dateien verarbeitet.", ++index, filecount);
-			StatusPb.Value = index;
+			StatusLbl.Content = string.Format("{0} von {1} Dateien verarbeitet.", ++_index, _filecount);
+			StatusPb.Value = _index;
 		}
 
 		private void Convert(string source, string destination)
@@ -144,33 +145,33 @@ namespace bmpKonverter
 			bmp.Save(destination, ImageFormat.Png);
 			bmp.Dispose();
 
-			this.Dispatcher.BeginInvoke((Action)UpdateGUI);
+			Dispatcher.BeginInvoke((Action)UpdateGUI);
 		}
 
 		private void WatchBtn_Click(object sender, RoutedEventArgs e)
 		{
-			if (_Watcher == null)
+			if (_watcher == null)
 			{
 				WatchBtn.Content = "Anhalten";
 				StartBtn.IsEnabled = false;
 				EnableGUI(false);
 				string outputdir = OutputTxt.Text;
 
-				_Watcher = new FileSystemWatcher()
+				_watcher = new FileSystemWatcher
 				{
 					Filter = "*.bmp",
 					IncludeSubdirectories = true,
 					Path = InputTxt.Text
 				};
-				_Watcher.Created += (send, eargs) => { BmpCreatedCallback(outputdir, eargs); };
-				_Watcher.Renamed += (send, eargs) => { BmpCreatedCallback(outputdir, eargs); };
-				_Watcher.EnableRaisingEvents = true;
+				_watcher.Created += (send, eargs) => { BmpCreatedCallback(outputdir, eargs); };
+				_watcher.Renamed += (send, eargs) => { BmpCreatedCallback(outputdir, eargs); };
+				_watcher.EnableRaisingEvents = true;
 			}
 			else
 			{
-				_Watcher.EnableRaisingEvents = false;
-				_Watcher.Dispose();
-				_Watcher = null;
+				_watcher.EnableRaisingEvents = false;
+				_watcher.Dispose();
+				_watcher = null;
 
 				WatchBtn.Content = "Überwachen";
 				EnableGUI(true);
@@ -182,7 +183,9 @@ namespace bmpKonverter
 		{
 			string name = Path.ChangeExtension(e.Name, ".png");
 			string outpath = Path.Combine(outputdir, name);
-			Directory.CreateDirectory(Path.GetDirectoryName(outpath));
+			var outdir = Path.GetDirectoryName(outpath);
+			if (outdir != null)
+				Directory.CreateDirectory(outdir);
 			Task.Factory.StartNew(() => { if (WaitForFile(e.FullPath, 20)) Convert(e.FullPath, outpath); });
 		}
 
